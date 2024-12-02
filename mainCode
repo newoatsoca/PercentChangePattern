@@ -1,0 +1,190 @@
+
+import alpaca_trade_api as tradeapi
+import matplotlib.pyplot as plt
+import matplotlib.dates as mdates
+import pandas as pd
+
+API_KEY = 'YOUR-KEY'
+API_SECRET = 'YOUR-SECRET-KEY'
+BASE_URL = 'https://api.alpaca.markets'
+
+
+
+# Initialize the API
+api = tradeapi.REST(API_KEY, API_SECRET, BASE_URL)
+
+def findPattern(tf, st, en, thresh, sym):
+    timeframe = tf
+    start = st
+    end = en
+    symbol = sym
+    # Define percentage change threshold for a large change
+    change_threshold = thresh #% change
+
+    bars = api.get_bars(symbol, timeframe, start=start, end=end).df
+
+    # Set the index to datetime for easier time-based operations
+    bars.index = pd.to_datetime(bars.index)
+
+    # Ensure the DataFrame index is also in UTC (this should already be the case)
+    bars.index = bars.index.tz_convert('UTC')
+
+    # Define a list to hold found patterns
+    found_patterns = []
+
+    # Prepare lists for plotting
+    pattern_times = []
+    pattern_prices = []
+
+    #Dictionary to store patterns based on percent change
+    pattern_groups = []
+    nextt = False # Variables to prevent repeated pattern finds later on
+    current = False
+    # Outer loop: Iterate over each minute in the dataset
+    for i in range(2, len(bars.index) - 2):  # Start from the 2nd minute to avoid index errors
+
+        # Get current, last, and second to last prices
+        current_time = bars.index[i]
+        current_price = bars.iloc[i]['close']
+
+        last_price = bars.iloc[i - 1]['close']
+
+        percent_change = ((current_price - last_price) / current_price) * 100
+
+        if abs(percent_change) > change_threshold: #If the difference between the 2 prices were greater than the threshold: get the price before that
+
+            lastlast_price = bars.iloc[i - 2]['close']
+            firstChange = ((last_price - lastlast_price) / last_price) * 100
+
+        # Inner loop: find a significant increase first
+            for x in range(2, len(bars.index) - 2):  # Start from the 2nd minute to avoid index errors
+
+                # Get current, last, and second last prices
+                next_time = bars.index[x]
+                next_price = bars.iloc[x]['close']
+
+                nextlast_price = bars.iloc[x - 1]['close']
+
+                # Calculate percentage change from current to next
+                newpercent_change = ((next_price - nextlast_price) / next_price) * 100
+
+                if abs(newpercent_change) > change_threshold:
+
+                    nextlastlast_price = bars.iloc[x-2]['close']
+                    secondChange = ((nextlast_price - nextlastlast_price) / nextlast_price) * 100
+
+                    if abs(firstChange - secondChange) <= 0.05: # Change this number based on stock volatility and time period(Ex. Days will have bigger percent changes than minutes)
+
+                        if current_time != next_time: #If the changes aren't the same then don't add to found patterns
+                            for pattern in found_patterns:
+                                if pattern==current_time:
+                                    current = True
+                                if pattern==next_time:
+                                    nextt = True
+                            if not (nextt and current): # If the 2 patterns aren't already in the list than add to found patterns
+                                found_patterns.append(
+                                    current_time
+                                )
+                                found_patterns.append(
+                                    next_time
+                                )
+                                #Store graph info
+                                graph_pattern = [current_time, current_price, next_time, next_price, round(secondChange, 3)]
+                                pattern_groups.append(graph_pattern)
+
+                                #Graph Info
+                                pattern_times.append(current_time)
+                                pattern_prices.append(current_price)
+                                pattern_times.append(next_time)
+                                pattern_prices.append(next_price)
+
+                                # Print pattern details
+
+                                print(f"Pattern found:")
+                                print(f"Pattern at {current_time} and {next_time}"
+                                      f"\nFrom {lastlast_price} to {last_price} ({round(firstChange,4)}%) then from {last_price} to {current_price} ({round(percent_change,4)}%)"
+                                      f"\nAnd {nextlastlast_price} to {nextlast_price} ({round(secondChange,4)}%) then from {nextlast_price} to {next_price} ({round(newpercent_change, 4)}%)"
+                                      f"\n")
+
+
+
+    # Optionally: print all found patterns at the end
+    print(f"\nTotal patterns found: {len(found_patterns)/2}")
+    #--------------------------------------------------------------------------plot 1
+    # Plotting the data with detected patterns
+    plt.figure(figsize=(14, 8))
+    plt.plot(bars.index, bars['close'], label='Close Price', color='blue')
+    plt.scatter(pattern_times, pattern_prices, color='red', marker='o', label='Detected Patterns')
+
+    # Format the plot
+    plt.title(f"TOTAL Price Patterns for {symbol} ({timeframe})")
+    plt.xlabel("Time")
+    plt.ylabel("Close Price")
+    plt.legend()
+    plt.grid(True)
+
+    # Format date on x-axis
+    plt.gca().xaxis.set_major_formatter(mdates.DateFormatter("%Y-%m-%d"))
+    plt.gcf().autofmt_xdate()
+
+    plt.show()
+
+    #-----------------------------------------------------------------------------------
+    # Plot each pattern group in a separate graph
+
+    for patterns in pattern_groups:
+        times = []
+        prices = []
+        match = patterns[4]
+        for pattern in pattern_groups:
+            if match == pattern[4]:
+                times.append(patterns[0])
+                times.append(patterns[2])
+                prices.append(pattern[1])
+                prices.append(pattern[3])
+
+        # Plotting the data with detected patterns
+        plt.figure(figsize=(14, 8))
+        plt.plot(bars.index, bars['close'], label='Close Price', color='blue')
+        plt.scatter(times, prices, color='red', marker='o', label='Detected Patterns')
+
+        # Format the plot
+        plt.title(f"Price Patterns with {match}% change to at least {thresh}% for {symbol} ({timeframe})")
+        plt.xlabel("Time")
+        plt.ylabel("Close Price")
+        plt.legend()
+        plt.grid(True)
+
+        # Format date on x-axis
+        plt.gca().xaxis.set_major_formatter(mdates.DateFormatter("%Y-%m-%d"))
+        plt.gcf().autofmt_xdate()
+
+        plt.show()
+    #---------------------------------------------------------------------------------------
+
+
+start = ''
+end = ''
+
+symbol = input("Choose the stock you would like to find a pattern for by typing the symbol. (Ex. 'TSLA', 'AAPL', 'NVDA'.): ")
+
+response = input("Would you like to search through the last year(1), a month(2), or a day(3)?: ")
+if int(response) == 1:
+    start = '2023-01-01T00:00:00Z'
+    end = '2023-12-31T23:59:59Z'
+elif int(response) == 2:
+    start = '2024-9-00T00:00:00Z'
+    end = '2024-9-30T23:59:59Z'
+elif int(response) == 3:
+    start = '2024-10-15T00:00:00Z'
+    end = '2024-10-15T23:59:59Z'
+
+timeframe = input("Type in the time in between each price you would like to check. (Ex. '1Min', '5Min', '1D'.): ")
+
+thresh = float(input("What would you like the threshold of percent change to be?: "))
+
+findPattern(timeframe, start, end, thresh, symbol)
+
+
+
+
