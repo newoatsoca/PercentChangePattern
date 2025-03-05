@@ -1,4 +1,4 @@
-# PercentChangePattern
+# Percent-Change-Pattern
 
 ## Overview
 This Python application is a powerful stock pattern detection and visualization tool that helps investors and traders identify potential trading patterns using historical stock data from the Alpaca Markets API.
